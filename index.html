@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>1v1 面對面魔方全螢幕計時器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap');
+        
+        body, html {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            font-family: 'JetBrains+Mono', monospace;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+        }
+
+        .player-zone {
+            position: relative;
+            height: 50vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.1s ease;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 玩家 B (上方玩家) 旋轉 180 度 */
+        #p2-zone {
+            transform: rotate(180deg);
+            border-bottom: 2px solid #1e293b;
+        }
+
+        /* 狀態顏色 */
+        .ready { background-color: #000; }
+        .holding { background-color: #7f1d1d; } /* 按住未達標 - 紅 */
+        .valid { background-color: #166534 !important; } /* 準備好 - 綠 */
+        .running { background-color: #000; }
+        .finished { background-color: #0f172a; }
+
+        .timer-display {
+            font-size: 30vw;
+            line-height: 0.9;
+            font-weight: 700;
+            color: #fff;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .status-text {
+            font-size: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: #64748b;
+            margin-bottom: 1rem;
+        }
+
+        .scramble-text {
+            position: absolute;
+            top: 5%;
+            width: 90%;
+            text-align: center;
+            color: #3b82f6;
+            font-weight: bold;
+            font-size: 1.2rem;
+            pointer-events: none;
+        }
+
+        .win-counter {
+            margin-top: 1rem;
+            font-size: 1.5rem;
+            color: #94a3b8;
+        }
+
+        /* 控制按鈕 */
+        #control-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+            background: #1e293b;
+            padding: 8px 16px;
+            border-radius: 9999px;
+            display: flex;
+            gap: 15px;
+            opacity: 0.3;
+            transition: opacity 0.3s;
+        }
+        #control-panel:hover { opacity: 1; }
+
+        #fullscreen-btn {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 10px;
+            z-index: 200;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 玩家 B (上方) -->
+    <div id="p2-zone" class="player-zone ready">
+        <div id="p2-scramble" class="scramble-text">Generating Scramble...</div>
+        <div id="p2-status" class="status-text">按住準備</div>
+        <div id="p2-timer" class="timer-display">0.00</div>
+        <div class="win-counter">勝場: <span id="p2-wins" class="text-red-500">0</span></div>
+    </div>
+
+    <!-- 中間控制懸浮鈕 -->
+    <div id="control-panel">
+        <button onclick="resetWins()" class="text-white text-xs">重置分數</button>
+        <button onclick="generateScramble()" class="text-white text-xs font-bold">刷新打亂</button>
+    </div>
+
+    <!-- 玩家 A (下方) -->
+    <div id="p1-zone" class="player-zone ready">
+        <div id="p1-scramble" class="scramble-text">Generating Scramble...</div>
+        <div id="p1-status" class="status-text">按住準備</div>
+        <div id="p1-timer" class="timer-display">0.00</div>
+        <div class="win-counter">勝場: <span id="p1-wins" class="text-green-500">0</span></div>
+    </div>
+
+    <button id="fullscreen-btn" onclick="toggleFullscreen()">全螢幕模式</button>
+
+    <script>
+        const MOVES = ["U", "D", "L", "R", "F", "B"];
+        const MODS = ["", "'", "2"];
+        
+        let p1 = { id: 'p1', state: 'ready', startTime: 0, wins: 0, holdTimer: null };
+        let p2 = { id: 'p2', state: 'ready', startTime: 0, wins: 0, holdTimer: null };
+
+        function generateScramble() {
+            let scramble = [];
+            let lastMove = "";
+            for (let i = 0; i < 20; i++) {
+                let move = MOVES[Math.floor(Math.random() * MOVES.length)];
+                while (move === lastMove) move = MOVES[Math.floor(Math.random() * MOVES.length)];
+                scramble.push(move + MODS[Math.floor(Math.random() * MODS.length)]);
+                lastMove = move;
+            }
+            const s = scramble.join(" ");
+            document.getElementById('p1-scramble').innerText = s;
+            document.getElementById('p2-scramble').innerText = s;
+        }
+
+        function updateUI(p) {
+            const zone = document.getElementById(`${p.id}-zone`);
+            const status = document.getElementById(`${p.id}-status`);
+            
+            zone.className = `player-zone ${p.state}`;
+            
+            const textMap = {
+                'ready': '按住準備',
+                'holding': '等待中...',
+                'valid': '放手開始！',
+                'running': '正在比賽',
+                'finished': '完成！'
+            };
+            status.innerText = textMap[p.state];
+        }
+
+        function startHolding(p) {
+            if (p.state === 'running') {
+                stopTimer(p);
+                return;
+            }
+            if (p.state === 'ready' || p.state === 'finished') {
+                p.state = 'holding';
+                updateUI(p);
+                p.holdTimer = setTimeout(() => {
+                    if (p.state === 'holding') {
+                        p.state = 'valid';
+                        updateUI(p);
+                    }
+                }, 400); // 專業計時器等待時間
+            }
+        }
+
+        function releaseHolding(p) {
+            if (p.state === 'valid') {
+                startTimer(p);
+            } else if (p.state === 'holding') {
+                clearTimeout(p.holdTimer);
+                p.state = 'ready';
+                updateUI(p);
+            }
+        }
+
+        function startTimer(p) {
+            p.state = 'running';
+            p.startTime = Date.now();
+            updateUI(p);
+            p.interval = setInterval(() => {
+                const diff = (Date.now() - p.startTime) / 1000;
+                document.getElementById(`${p.id}-timer`).innerText = diff.toFixed(2);
+            }, 10);
+        }
+
+        function stopTimer(p) {
+            clearInterval(p.interval);
+            p.state = 'finished';
+            updateUI(p);
+            checkMatchResult();
+        }
+
+        function checkMatchResult() {
+            if (p1.state === 'finished' && p2.state === 'finished') {
+                const t1 = parseFloat(document.getElementById('p1-timer').innerText);
+                const t2 = parseFloat(document.getElementById('p2-timer').innerText);
+                if (t1 < t2) p1.wins++;
+                else if (t2 < t1) p2.wins++;
+                
+                document.getElementById('p1-wins').innerText = p1.wins;
+                document.getElementById('p2-wins').innerText = p2.wins;
+                setTimeout(generateScramble, 2000);
+            }
+        }
+
+        function resetWins() {
+            p1.wins = 0; p2.wins = 0;
+            document.getElementById('p1-wins').innerText = 0;
+            document.getElementById('p2-wins').innerText = 0;
+            generateScramble();
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+                document.getElementById('fullscreen-btn').style.display = 'none';
+            }
+        }
+
+        // 綁定事件
+        document.getElementById('p1-zone').addEventListener('touchstart', (e) => { e.preventDefault(); startHolding(p1); });
+        document.getElementById('p1-zone').addEventListener('touchend', (e) => { e.preventDefault(); releaseHolding(p1); });
+        document.getElementById('p2-zone').addEventListener('touchstart', (e) => { e.preventDefault(); startHolding(p2); });
+        document.getElementById('p2-zone').addEventListener('touchend', (e) => { e.preventDefault(); releaseHolding(p2); });
+
+        // 鍵盤支援
+        window.addEventListener('keydown', (e) => {
+            if (e.repeat) return;
+            if (e.code === 'Space') startHolding(p1);
+            if (e.code === 'Enter') startHolding(p2);
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') releaseHolding(p1);
+            if (e.code === 'Enter') releaseHolding(p2);
+        });
+
+        window.onload = generateScramble;
+    </script>
+</body>
+</html>
+
