@@ -1,2 +1,3 @@
 # Race-timer
-Two players can race their cube.
+Two players can compete to slove a Rubik's cube.
+ 
